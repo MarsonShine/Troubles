@@ -88,4 +88,39 @@ public class ArrayLongToStringConverter : JsonConverter<long[]>
 await client.GetAsync<object>("/student/getpaged?startTime="+time.ToString("yyyy-MM-DD HH:mm:sssss"));
 ```
 
-思考：但是问题虽然解决了，但是我们之后是不是只要涉及到传时间参数是不是都得指定格式呢？有没有什么一劳永逸的方法呢？目前我还没有得到解决方法。希望可以得到大家的解决方案。
+思考：但是问题虽然解决了，但是我们之后是不是只要涉及到传时间参数是不是都得指定格式呢？有没有什么一劳永逸的方法呢？~~目前我还没有得到解决方法~~。希望可以得到大家的解决方案。
+
+经翻看 [DateTime](https://source.dot.net/#System.Private.CoreLib/DateTimeFormat.cs) 源码得知，时间类型的 `ToString` ，其实是调用了 `DateTimeFormat.Format(DateTime dateTime, string? format, IFormatProvider? provider)` ，这个方法又调用了重载函数 `string Format(DateTime dateTime, string? format, IFormatProvider? provider, TimeSpan offset)`。在没有提供 format 和 formatProvider 的情况下，系统会创建一个默认的 `DateTimeFormatInfo` 实例化对象，然后进行时间格式化。
+
+所以我们只要修改对应的 `DateTimeFormatInfo` 成员属性即可。代码如下
+
+```c#
+CultureInfo culture = (CultureInfo)CultureInfo.CurrentCulture.Clone();
+culture.DateTimeFormat.ShortDatePattern = "yyyy-MM-dd";
+CultureInfo.CurrentCulture = culture;
+```
+
+这样就可以一劳永逸了，而不用在每次传时间参数的时候指定 format。
+
+除了上面的方式，其实也可以通过反射来在原来的 `DateTimeFormatInfo` 基础上直接修改 `ShortDatePattern` 等属性。为什么要反射？先来看 `ShortDatePattern` 属性定义：
+
+```c#
+public string ShortDatePattern { get; set; }
+```
+
+那我们是不是可以直接对它进行赋值呢
+
+```c#
+CultureInfo.CurrentCulture.DateTimeFormat.ShortDatePattern = "yyyy-MM-dd";
+```
+
+答案是不行，会报错：`System.InvalidOperationException : Instance is read-only.` 意思是说 `ShortDatePattern` 是只读属性。明明是 get,set 为什么会是只读呢？翻看[源码](https://source.dot.net/#System.Private.CoreLib/DateTimeFormatInfo.cs,845)就很明白了，因为它是通过一个字段 `_isReadOnly` 来控制属性是否能被修改。看这个类的其他共有属性，就会发现都是通过这个字段来控制的。所以通过反射修改这个字段设置为 true 从而达到在原有的示例直接修改这个属性的目的。
+
+```c#
+var t = CultureInfo.CurrentCulture.DateTimeFormat.GetType();
+var isReadOnlyFieldInfo = t.GetField("_isReadOnly", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+isReadOnlyFieldInfo.SetValue(CultureInfo.CurrentCulture.DateTimeFormat, false);
+CultureInfo.CurrentCulture.DateTimeFormat.ShortDatePattern = "yyyy-MM-dd";
+isReadOnlyFieldInfo.SetValue(CultureInfo.CurrentCulture.DateTimeFormat, true);
+```
+
