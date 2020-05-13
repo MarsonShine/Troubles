@@ -124,3 +124,31 @@ CultureInfo.CurrentCulture.DateTimeFormat.ShortDatePattern = "yyyy-MM-dd";
 isReadOnlyFieldInfo.SetValue(CultureInfo.CurrentCulture.DateTimeFormat, true);
 ```
 
+## 问题4: .NET Core 3.X 内置序列化中文转码问题，设置全局序列化器无效
+
+这个问题是很普遍的问题，就是 `System.Text.Json.JsonSerializer` 序列化对象时，会把中文属性值转码。
+
+网上很多解决方案都是说加全局序列化器：
+
+```c#
+services.AddControllers().AddJsonOptions(config =>
+{
+   Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
+});
+```
+
+但是运行发现这是没效果的，只能把 `JsonSerializerOptions` 传给 `JsonSerializer.Serialize(obj, options)` 才能执行正常。但是有很多地方需要手动添加 options，所以我翻找资料都无果，最后有人告知我这个功能目前 .NET Core 版本里不支持设置默认的序列化器，只能一个个传。具体详见 https://stackoverflow.com/questions/58331479/how-to-globally-set-default-options-for-system-text-json-jsonserializer ，以及这个 [issue](https://github.com/dotnet/runtime/issues/31094)。
+
+但是我还是不死心，通过翻看[源码](https://source.dot.net/#System.Text.Json/System/Text/Json/Serialization/JsonSerializer.Write.String.cs,61)得知
+JsonSerializer.Serialize 在没有传 setting 的时候是调用了 JsonSerializerOptions.s_defaultOptions 这个单例对象。所以很自然有了另一种解决方法：
+
+```c#
+// Startup.cs 
+// Configure
+var fieldInfo = typeof(JsonSerializerOptions).GetField("s_defaultOptions", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Instance);
+
+ var options = fieldInfo.GetValue(null) as JsonSerializerOptions;
+ options.Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
+```
+
+这样就不用在每个序列化方法去传入 option 了，从而实现了全局序列化器的效果。
