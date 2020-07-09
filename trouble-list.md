@@ -124,3 +124,40 @@ CultureInfo.CurrentCulture.DateTimeFormat.ShortDatePattern = "yyyy-MM-dd";
 isReadOnlyFieldInfo.SetValue(CultureInfo.CurrentCulture.DateTimeFormat, true);
 ```
 
+## 问题4：时间戳于时间格式的转换
+
+时间戳的展现形式分为两种单位，一种是秒级，还有一种是毫秒级。秒级展现形式长度一般为 10 位，毫秒级时间戳一般位 13 位。而时间戳展现的位数一般是 13 位。转换方式一般就是先转换为本地时间，然后与 1970-01-01 的时间戳对比。
+
+```c#
+public class DateTimeHelper
+{
+    public static long ToTimestamp(DateTime dateTime, TimestampStyle timestampStyle = TimestampStyle.Seconds)
+    {
+        var start = new DateTime(1970, 1, 1, 0, 0, 0).ToLocalTime();
+        var span = dateTime.ToLocalTime() - start;
+
+        if (timestampStyle == TimestampStyle.Seconds)
+            return (long)span.TotalSeconds;
+        else
+            return (long)span.TotalMilliseconds;
+    }
+
+    public static DateTime ToDateTime(long timestamp, TimestampStyle timestampStyle = TimestampStyle.Seconds)
+    {
+        // Unix timestamp is seconds past epoch
+        DateTime dtDateTime = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
+        if (timestampStyle == TimestampStyle.Seconds)
+            dtDateTime = dtDateTime.AddSeconds(timestamp).ToLocalTime();
+        else
+            dtDateTime = dtDateTime.AddMilliseconds(timestamp).ToLocalTime();
+        return dtDateTime;
+    }
+
+    public enum TimestampStyle
+    {
+        Seconds,
+        Milliseconds
+    }
+}
+```
+
